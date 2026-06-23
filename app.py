@@ -11,7 +11,6 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
-from docx.oxml.table import CT_Tbl
 from docx.oxml.text.paragraph import CT_P
 from docx.opc.packuri import PackURI
 from docx.opc.part import Part
