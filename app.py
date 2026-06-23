@@ -10,6 +10,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
 
 # -------------------- Page Configuration --------------------
 st.set_page_config(
@@ -191,16 +193,91 @@ def format_reference_paragraph(paragraph):
         run.font.size = Pt(12)
         run.italic = True
 
+# -------------------- Copy Images Function --------------------
+def copy_paragraph_with_images(original_para, new_doc, in_reference=False, case_mode="original"):
+    """
+    Copy a paragraph from original document to new document,
+    preserving images and applying text formatting based on case_mode.
+    Returns the new paragraph and the text content.
+    """
+    # Create new paragraph
+    new_para = new_doc.add_paragraph()
+    text_parts = []
+    has_image = False
+
+    for run in original_para.runs:
+        # Check for images (drawing)
+        drawing = run._element.find('.//' + qn('w:drawing'))
+        if drawing is not None:
+            # Extract image blob
+            blip = drawing.find('.//' + qn('a:blip'))
+            if blip is not None:
+                rId = blip.get(qn('r:embed'))
+                if rId and rId in original_para.part.related_parts:
+                    image_part = original_para.part.related_parts[rId]
+                    # Add image to new paragraph
+                    new_run = new_para.add_run()
+                    new_run.add_picture(io.BytesIO(image_part.blob), width=Inches(5.0))
+                    has_image = True
+        else:
+            # Text run - apply case transformation
+            text = run.text
+            if text.strip():
+                if case_mode == "capital":
+                    text = text.upper()
+                elif case_mode == "lower":
+                    text = text.lower()
+                elif case_mode == "sentence":
+                    # Convert to sentence case (first letter capital, rest lower)
+                    text = text.lower()
+                    # Capitalize first letter of each sentence (simple)
+                    import re
+                    text = re.sub(r'(^|\.\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+                # else original case
+                new_run = new_para.add_run(text)
+                text_parts.append(text)
+
+    # Apply formatting to the new paragraph (font, size, alignment)
+    for run in new_para.runs:
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(12)
+    new_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    new_para.paragraph_format.line_spacing = 1.5
+
+    # Apply hanging indent if in reference section
+    if in_reference:
+        new_para.paragraph_format.first_line_indent = Inches(-0.5)
+        new_para.paragraph_format.left_indent = Inches(0.5)
+        # Also format the reference (italicize book titles)
+        format_reference_paragraph(new_para)
+
+    return new_para, " ".join(text_parts)
+
 # -------------------- Cover Page Builder --------------------
-def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_logo=None):
+def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_logo=None, case_mode="original"):
+    """Build cover page with borderless credentials table."""
     def add_centered(text, bold=False):
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run(text)
+        run = p.add_run(apply_case(text, case_mode))
         run.bold = bold
         run.font.name = 'Times New Roman'
         run.font.size = Pt(12)
         return p
+
+    # Apply case to metadata values
+    def apply_case(text, mode):
+        if mode == "capital":
+            return text.upper()
+        elif mode == "lower":
+            return text.lower()
+        elif mode == "sentence":
+            if not text:
+                return text
+            # Simple sentence case: first letter capital, rest lower
+            text_lower = text.lower()
+            return text_lower[0].upper() + text_lower[1:] if text_lower else text_lower
+        return text
 
     add_centered("MZUMBE UNIVERSITY", bold=True)
 
@@ -243,6 +320,7 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
             ("DATE OF SUBMISSION :", metadata.get("date_submission", "")),
         ]
 
+    # Create borderless table
     table = doc.add_table(rows=len(rows_data), cols=2)
     table.autofit = False
     table.columns[0].width = Inches(2.5)
@@ -250,35 +328,38 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
 
     for i, (label, value) in enumerate(rows_data):
         row = table.rows[i]
+        # Label
         cell_label = row.cells[0]
         p_label = cell_label.paragraphs[0]
         p_label.paragraph_format.space_after = Pt(6)
         p_label.paragraph_format.line_spacing = 2.5
-        run_l = p_label.add_run(label.upper())
+        run_l = p_label.add_run(apply_case(label.upper(), case_mode))
         run_l.bold = True
         run_l.font.name = 'Times New Roman'
         run_l.font.size = Pt(12)
 
+        # Value
         cell_value = row.cells[1]
         p_value = cell_value.paragraphs[0]
         p_value.paragraph_format.space_after = Pt(6)
         p_value.paragraph_format.line_spacing = 2.5
-        run_v = p_value.add_run(str(value).upper())
+        run_v = p_value.add_run(apply_case(str(value), case_mode))
         run_v.font.name = 'Times New Roman'
         run_v.font.size = Pt(12)
 
-    # Remove all borders
+    # Remove all borders - INVISIBLE TABLE
     tblPr = table._tbl.tblPr
-    borders = parse_xml(f'<w:tblBorders {nsdecls("w")}>'
-                        f'<w:top w:val="none"/>'
-                        f'<w:left w:val="none"/>'
-                        f'<w:bottom w:val="none"/>'
-                        f'<w:right w:val="none"/>'
-                        f'<w:insideH w:val="none"/>'
-                        f'<w:insideV w:val="none"/>'
-                        f'</w:tblBorders>')
-    tblPr.append(borders)
+    borders_xml = parse_xml(f'<w:tblBorders {nsdecls("w")}>'
+                            f'<w:top w:val="none"/>'
+                            f'<w:left w:val="none"/>'
+                            f'<w:bottom w:val="none"/>'
+                            f'<w:right w:val="none"/>'
+                            f'<w:insideH w:val="none"/>'
+                            f'<w:insideV w:val="none"/>'
+                            f'</w:tblBorders>')
+    tblPr.append(borders_xml)
 
+    # Student table for Group Assignment (visible)
     if assignment_type == "Group Assignment" and students:
         doc.add_paragraph()
         student_table = doc.add_table(rows=1, cols=3)
@@ -290,8 +371,8 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
         for idx, (name, reg) in enumerate(students, start=1):
             row_cells = student_table.add_row().cells
             row_cells[0].text = str(idx)
-            row_cells[1].text = name.strip().upper()
-            row_cells[2].text = reg.strip().upper()
+            row_cells[1].text = apply_case(name.strip(), case_mode)
+            row_cells[2].text = apply_case(reg.strip(), case_mode)
         for row in student_table.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
@@ -306,32 +387,15 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
     for _ in range(3):
         doc.add_paragraph()
 
-# -------------------- Core Processing (with images) --------------------
-def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_type, students, uploaded_logo):
+# -------------------- Core Processing (with images and case mode) --------------------
+def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_type, students, uploaded_logo, case_mode):
     new_doc = Document()
 
-    # Cover page
-    create_cover_page(new_doc, assignment_type, metadata, students, uploaded_logo)
+    # Cover
+    create_cover_page(new_doc, assignment_type, metadata, students, uploaded_logo, case_mode)
     add_mzumbe_double_border_to_first_section(new_doc)
     new_doc.add_section()
     remove_borders_from_other_sections(new_doc)
-
-    # Helper to add content paragraph with formatting
-    def add_content_paragraph(doc, text, is_reference=False, image_blob=None):
-        p = doc.add_paragraph()
-        if image_blob:
-            run = p.add_run()
-            run.add_picture(io.BytesIO(image_blob), width=Inches(5.0))
-        else:
-            run = p.add_run(text)
-        run.font.name = 'Times New Roman'
-        run.font.size = Pt(12)
-        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        p.paragraph_format.line_spacing = 1.5
-        if is_reference:
-            p.paragraph_format.first_line_indent = Inches(-0.5)
-            p.paragraph_format.left_indent = Inches(0.5)
-        return p
 
     in_reference = False
     paragraphs_text = []
@@ -339,47 +403,28 @@ def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_t
     if input_mode == "Pakia Faili la DOCX" and uploaded_file is not None:
         original = Document(uploaded_file)
         # Iterate over body elements to preserve order
-        from docx.oxml.text.paragraph import CT_P
-        from docx.oxml.table import CT_Tbl
         body = original._element.body
         for child in body.iterchildren():
             if child.tag == qn('w:p'):
                 p = Document._element_to_paragraph(child)
                 text = p.text.strip()
-                # Check for images in runs
-                image_blob = None
-                for run in p.runs:
-                    drawing = run._element.find('.//' + qn('w:drawing'))
-                    if drawing is not None:
-                        blip = drawing.find('.//' + qn('a:blip'))
-                        if blip is not None:
-                            rId = blip.get(qn('r:embed'))
-                            if rId:
-                                image_part = original.part.related_parts[rId]
-                                image_blob = image_part.blob
-                                break
-                # Detect reference heading
+                # Check if this is a reference heading
                 if text.upper() in ["REFERENCES", "BIBLIOGRAPHY"]:
-                    # Add page break and center the heading
                     new_doc.add_page_break()
                     in_reference = True
                     p_heading = new_doc.add_paragraph()
                     p_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = p_heading.add_run(text)
+                    run = p_heading.add_run(apply_case(text, case_mode))
                     run.bold = True
                     run.font.name = 'Times New Roman'
                     run.font.size = Pt(12)
                     continue
-                # Add paragraph with formatting
-                is_ref = in_reference and text.upper() not in ["REFERENCES", "BIBLIOGRAPHY"]
-                new_p = add_content_paragraph(new_doc, text, is_ref, image_blob)
-                if is_ref:
-                    # Format reference (italicize book titles)
-                    format_reference_paragraph(new_p)
-                if text:
-                    paragraphs_text.append(text)
+                # Copy paragraph with images
+                new_para, para_text = copy_paragraph_with_images(p, new_doc, in_reference, case_mode)
+                if para_text:
+                    paragraphs_text.append(para_text)
             elif child.tag == qn('w:tbl'):
-                # Copy table (simplified)
+                # Copy table (basic)
                 try:
                     table = Document._element_to_table(child)
                     if table.rows:
@@ -387,7 +432,7 @@ def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_t
                         new_table.style = 'Table Grid'
                         for i, row in enumerate(table.rows):
                             for j, cell in enumerate(row.cells):
-                                new_table.cell(i, j).text = cell.text
+                                new_table.cell(i, j).text = apply_case(cell.text, case_mode)
                 except:
                     pass
     elif input_mode == "Bandika Maandishi" and raw_text:
@@ -398,15 +443,22 @@ def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_t
                 in_reference = True
                 p_heading = new_doc.add_paragraph()
                 p_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                run = p_heading.add_run(text)
+                run = p_heading.add_run(apply_case(text, case_mode))
                 run.bold = True
                 run.font.name = 'Times New Roman'
                 run.font.size = Pt(12)
                 continue
-            is_ref = in_reference and text.upper() not in ["REFERENCES", "BIBLIOGRAPHY"]
-            new_p = add_content_paragraph(new_doc, text, is_ref)
-            if is_ref:
-                format_reference_paragraph(new_p)
+            # Add paragraph (no images from text)
+            new_para = new_doc.add_paragraph()
+            run = new_para.add_run(apply_case(text, case_mode))
+            run.font.name = 'Times New Roman'
+            run.font.size = Pt(12)
+            new_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            new_para.paragraph_format.line_spacing = 1.5
+            if in_reference and text.upper() not in ["REFERENCES", "BIBLIOGRAPHY"]:
+                new_para.paragraph_format.first_line_indent = Inches(-0.5)
+                new_para.paragraph_format.left_indent = Inches(0.5)
+                format_reference_paragraph(new_para)
             paragraphs_text.append(text)
     else:
         raise ValueError("Hakuna maandishi yaliyopatikana.")
@@ -420,6 +472,23 @@ def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_t
     new_doc.save(buffer)
     buffer.seek(0)
     return buffer
+
+# Helper function for case transformation
+def apply_case(text, mode):
+    if mode == "capital":
+        return text.upper()
+    elif mode == "lower":
+        return text.lower()
+    elif mode == "sentence":
+        if not text:
+            return text
+        # Sentence case: first letter of each sentence capital, rest lower
+        import re
+        text_lower = text.lower()
+        # Capitalize first letter of first sentence
+        text_lower = re.sub(r'(^|\.\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text_lower)
+        return text_lower
+    return text
 
 # -------------------- PDF Preview (optional) --------------------
 def convert_docx_to_pdf(docx_buffer):
@@ -452,7 +521,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Logo uploader (optional) in sidebar
+# Sidebar
 st.sidebar.header("⚙️ Mipangilio")
 uploaded_logo = st.sidebar.file_uploader(
     "Pakia Nembo Mwenyewe (hiari)",
@@ -460,6 +529,21 @@ uploaded_logo = st.sidebar.file_uploader(
     help="Ikiwa nembo ya mtandao haipatikani, pakia picha yako."
 )
 
+case_mode = st.sidebar.selectbox(
+    "Uandishi wa Herufi",
+    ["Uandishi halisi (Original)", "Herufi kubwa (CAPITAL)", "Herufi ndogo (small)", "Herufi za kwanza kubwa (Sentence)"],
+    index=0
+)
+# Map to internal mode
+case_map = {
+    "Uandishi halisi (Original)": "original",
+    "Herufi kubwa (CAPITAL)": "capital",
+    "Herufi ndogo (small)": "lower",
+    "Herufi za kwanza kubwa (Sentence)": "sentence"
+}
+case_mode_internal = case_map[case_mode]
+
+# Main input
 input_mode = st.radio(
     "Chagua njia ya kuingiza maandishi",
     ["Pakia Faili la DOCX", "Bandika Maandishi"],
@@ -530,6 +614,7 @@ col_btn1, col_btn2 = st.columns(2)
 process_btn = col_btn1.button("🚀 Pangwa Katika Sekunde", use_container_width=True)
 preview_btn = col_btn2.button("👁️ Onyesha Hati (Preview)", use_container_width=True, disabled=not st.session_state.get('processed', False))
 
+# State
 if 'doc_buffer' not in st.session_state:
     st.session_state.doc_buffer = None
 if 'processed' not in st.session_state:
@@ -587,7 +672,8 @@ if process_btn:
                     metadata,
                     assignment_type,
                     students,
-                    uploaded_logo
+                    uploaded_logo,
+                    case_mode_internal
                 )
                 st.session_state.doc_buffer = buffer
                 st.session_state.processed = True
@@ -602,6 +688,7 @@ if process_btn:
                     use_container_width=True
                 )
 
+                # Preview
                 try:
                     with st.spinner("Inaandaa onyesho la PDF..."):
                         pdf_buffer = convert_docx_to_pdf(buffer)
@@ -634,7 +721,7 @@ if preview_btn and st.session_state.processed and st.session_state.doc_buffer is
 st.markdown(
     """
     <hr>
-    <p class="footer">Imetengenezwa kwa  na Musa Lucas Masasi · Chuo Kikuu cha Mzumbe</p>
+    <p class="footer">Imetengenezwa Musa Lucas Masasi · Chuo Kikuu cha Mzumbe</p>
     """,
     unsafe_allow_html=True
 )
