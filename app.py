@@ -1,17 +1,4 @@
 import streamlit as st
-import streamlit as st
-
-# Kodi ya kuficha alama za Streamlit na GitHub ili app iwe pure
-hide_style = """
-    <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .stAppDeployDropdown {display: none !important;}
-    viewerBadge_link__e3241 {display: none !important;}
-    </style>
-"""
-st.markdown(hide_style, unsafe_allow_html=True)
 import requests
 import io
 import re
@@ -141,23 +128,37 @@ def add_page_numbers(doc):
             pg_num_type.set(qn('w:start'), '1')
             sect_pr.append(pg_num_type)
 
-# -------------------- Logo Loader --------------------
-def get_logo_stream():
-    """Try to load logo from local file, then from URL; if all fail, return None."""
+# -------------------- Logo Loader (Improved) --------------------
+def get_logo_stream(uploaded_logo=None):
+    """
+    Try to load logo from:
+    1. Uploaded file (if provided)
+    2. Local file 'mzumbe_logo.png'
+    3. Multiple URLs (Wikimedia and alternative)
+    If all fail, return None.
+    """
+    # 1. User uploaded logo
+    if uploaded_logo is not None:
+        return io.BytesIO(uploaded_logo.getvalue())
+    
+    # 2. Local file
     local_file = "mzumbe_logo.png"
     if os.path.exists(local_file):
         with open(local_file, 'rb') as f:
             return io.BytesIO(f.read())
 
-    try:
-        response = requests.get(
-            "https://upload.wikimedia.org/wikipedia/commons/e/e1/Mzumbe_University_logo.png",
-            timeout=5
-        )
-        if response.status_code == 200:
-            return io.BytesIO(response.content)
-    except Exception:
-        pass
+    # 3. Try multiple URLs
+    urls = [
+        "https://upload.wikimedia.org/wikipedia/commons/e/e1/Mzumbe_University_logo.png",
+        "https://www.mzumbe.ac.tz/images/logo.png",  # alternative
+    ]
+    for url in urls:
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                return io.BytesIO(response.content)
+        except Exception:
+            continue
     return None
 
 # -------------------- Reference Formatter (Italicize Book Titles) --------------------
@@ -165,8 +166,6 @@ def format_reference_paragraph(paragraph):
     """
     Parse the paragraph text to italicize book titles.
     Assumes format: "Author, A. A. (Year). Title of book. Publisher."
-    We identify the title as the part after the year (in parentheses) and before the publisher (which typically starts with a capital letter and ends with a period).
-    We clear the paragraph and add runs: normal for author/year, italic for title, normal for publisher.
     """
     text = paragraph.text
     if not text.strip():
@@ -218,7 +217,7 @@ def format_reference_paragraph(paragraph):
         run.italic = True
 
 # -------------------- Cover Page Builder --------------------
-def create_cover_page(doc, assignment_type, metadata, students=None):
+def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_logo=None):
     """
     Build the cover page with centered headers, logo, and credentials in a borderless 2-column table.
     Line spacing for credentials is 2.5 to fill space.
@@ -236,7 +235,7 @@ def create_cover_page(doc, assignment_type, metadata, students=None):
     add_centered("MZUMBE UNIVERSITY", bold=True)
 
     # Logo
-    logo_stream = get_logo_stream()
+    logo_stream = get_logo_stream(uploaded_logo)
     if logo_stream:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -245,7 +244,7 @@ def create_cover_page(doc, assignment_type, metadata, students=None):
     else:
         p = add_centered("[Nembo ya Mzumbe - tafadhali weka picha mwenyewe]", bold=False)
         if not hasattr(st, '_logo_hint_shown'):
-            st.info("Kidokezo: Weka faili 'mzumbe_logo.png' kwenye folder ya app ili kuona nembo.")
+            st.info("💡 Kidokezo: Weka faili 'mzumbe_logo.png' kwenye folder ya app, au pakia picha kupitia chaguo hapa chini ili kuona nembo.")
             st._logo_hint_shown = True
 
     add_centered("SCHOOL OF BUSINESS (SOB)", bold=True)
@@ -288,7 +287,7 @@ def create_cover_page(doc, assignment_type, metadata, students=None):
         cell_label = row.cells[0]
         p_label = cell_label.paragraphs[0]
         p_label.paragraph_format.space_after = Pt(6)
-        p_label.paragraph_format.line_spacing = 2.5  # Changed to 2.5
+        p_label.paragraph_format.line_spacing = 2.5
         run_l = p_label.add_run(label.upper())
         run_l.bold = True
         run_l.font.name = 'Times New Roman'
@@ -298,7 +297,7 @@ def create_cover_page(doc, assignment_type, metadata, students=None):
         cell_value = row.cells[1]
         p_value = cell_value.paragraphs[0]
         p_value.paragraph_format.space_after = Pt(6)
-        p_value.paragraph_format.line_spacing = 2.5  # Changed to 2.5
+        p_value.paragraph_format.line_spacing = 2.5
         run_v = p_value.add_run(str(value).upper())
         run_v.font.name = 'Times New Roman'
         run_v.font.size = Pt(12)
@@ -345,12 +344,12 @@ def create_cover_page(doc, assignment_type, metadata, students=None):
         doc.add_paragraph()
 
 # -------------------- Core Processing --------------------
-def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_type, students):
+def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_type, students, uploaded_logo):
     """Build the final document."""
     new_doc = Document()
 
     # 1. Cover page (section 0)
-    create_cover_page(new_doc, assignment_type, metadata, students)
+    create_cover_page(new_doc, assignment_type, metadata, students, uploaded_logo)
 
     # 2. Add double border to first section (cover page only)
     add_mzumbe_double_border_to_first_section(new_doc)
@@ -439,6 +438,14 @@ st.markdown(
     <hr>
     """,
     unsafe_allow_html=True
+)
+
+# ---- Logo Uploader (Optional) ----
+st.sidebar.header("⚙️ Mipangilio")
+uploaded_logo = st.sidebar.file_uploader(
+    "Pakia Nembo Mwenyewe (hiari)",
+    type=["png", "jpg", "jpeg"],
+    help="Ikiwa nembo ya mtandao haipatikani, pakia picha yako."
 )
 
 # ---- Input Mode Selection ----
@@ -579,7 +586,8 @@ if process_btn:
                     raw_text,
                     metadata,
                     assignment_type,
-                    students
+                    students,
+                    uploaded_logo  # pass the uploaded logo
                 )
                 st.session_state.doc_buffer = buffer
                 st.session_state.processed = True
