@@ -75,7 +75,6 @@ st.markdown("""
 
 # -------------------- XML Helpers --------------------
 def add_mzumbe_double_border_to_first_section(doc):
-    """Add double-line page border (3pt) ONLY to the first page of the first section."""
     if len(doc.sections) == 0:
         return
     section = doc.sections[0]
@@ -86,14 +85,13 @@ def add_mzumbe_double_border_to_first_section(doc):
     for border_name in ['top', 'left', 'bottom', 'right']:
         border = OxmlElement(f'w:{border_name}')
         border.set(qn('w:val'), 'double')
-        border.set(qn('w:sz'), '24')   # 3 pt
+        border.set(qn('w:sz'), '24')
         border.set(qn('w:space'), '4')
         border.set(qn('w:color'), 'auto')
         pg_borders.append(border)
     sect_pr.append(pg_borders)
 
 def remove_borders_from_other_sections(doc):
-    """Remove any page borders from sections other than the first."""
     for idx, section in enumerate(doc.sections):
         if idx == 0:
             continue
@@ -102,11 +100,6 @@ def remove_borders_from_other_sections(doc):
             sect_pr.remove(elem)
 
 def add_page_numbers(doc):
-    """
-    Insert PAGE field in footer of content sections (section index >= 1).
-    Cover page (section 0) gets no footer.
-    Also set page numbering to start at 1 for content section.
-    """
     for idx, section in enumerate(doc.sections):
         if idx == 0:
             section.different_first_page_header_footer = True
@@ -128,29 +121,17 @@ def add_page_numbers(doc):
             pg_num_type.set(qn('w:start'), '1')
             sect_pr.append(pg_num_type)
 
-# -------------------- Logo Loader (Improved) --------------------
+# -------------------- Logo Loader --------------------
 def get_logo_stream(uploaded_logo=None):
-    """
-    Try to load logo from:
-    1. Uploaded file (if provided)
-    2. Local file 'mzumbe_logo.png'
-    3. Multiple URLs (Wikimedia and alternative)
-    If all fail, return None.
-    """
-    # 1. User uploaded logo
     if uploaded_logo is not None:
         return io.BytesIO(uploaded_logo.getvalue())
-    
-    # 2. Local file
     local_file = "mzumbe_logo.png"
     if os.path.exists(local_file):
         with open(local_file, 'rb') as f:
             return io.BytesIO(f.read())
-
-    # 3. Try multiple URLs
     urls = [
         "https://upload.wikimedia.org/wikipedia/commons/e/e1/Mzumbe_University_logo.png",
-        "https://www.mzumbe.ac.tz/images/logo.png",  # alternative
+        "https://www.mzumbe.ac.tz/images/logo.png",
     ]
     for url in urls:
         try:
@@ -161,21 +142,15 @@ def get_logo_stream(uploaded_logo=None):
             continue
     return None
 
-# -------------------- Reference Formatter (Italicize Book Titles) --------------------
+# -------------------- Reference Formatter --------------------
 def format_reference_paragraph(paragraph):
-    """
-    Parse the paragraph text to italicize book titles.
-    Assumes format: "Author, A. A. (Year). Title of book. Publisher."
-    """
     text = paragraph.text
     if not text.strip():
         return
-
     import re
     match_year = re.search(r'\((\d{4})\)\.\s*', text)
     if not match_year:
         return
-
     start_idx = match_year.end()
     remainder = text[start_idx:]
     match_pub = re.search(r'\.\s+([A-Z][a-z])', remainder)
@@ -218,10 +193,6 @@ def format_reference_paragraph(paragraph):
 
 # -------------------- Cover Page Builder --------------------
 def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_logo=None):
-    """
-    Build the cover page with centered headers, logo, and credentials in a borderless 2-column table.
-    Line spacing for credentials is 2.5 to fill space.
-    """
     def add_centered(text, bold=False):
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -231,10 +202,8 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
         run.font.size = Pt(12)
         return p
 
-    # Header
     add_centered("MZUMBE UNIVERSITY", bold=True)
 
-    # Logo
     logo_stream = get_logo_stream(uploaded_logo)
     if logo_stream:
         p = doc.add_paragraph()
@@ -244,16 +213,14 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
     else:
         p = add_centered("[Nembo ya Mzumbe - tafadhali weka picha mwenyewe]", bold=False)
         if not hasattr(st, '_logo_hint_shown'):
-            st.info("💡 Kidokezo: Weka faili 'mzumbe_logo.png' kwenye folder ya app, au pakia picha kupitia chaguo hapa chini ili kuona nembo.")
+            st.info("💡 Kidokezo: Weka faili 'mzumbe_logo.png' kwenye folder ya app, au pakia picha kupitia chaguo hapa chini.")
             st._logo_hint_shown = True
 
     add_centered("SCHOOL OF BUSINESS (SOB)", bold=True)
 
-    # Spacing
     for _ in range(2):
         doc.add_paragraph()
 
-    # Credentials Table (Borderless)
     if assignment_type == "Individual Assignment":
         rows_data = [
             ("PROGRAMME :", metadata.get("programme", "")),
@@ -283,7 +250,6 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
 
     for i, (label, value) in enumerate(rows_data):
         row = table.rows[i]
-        # Label cell
         cell_label = row.cells[0]
         p_label = cell_label.paragraphs[0]
         p_label.paragraph_format.space_after = Pt(6)
@@ -293,7 +259,6 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
         run_l.font.name = 'Times New Roman'
         run_l.font.size = Pt(12)
 
-        # Value cell
         cell_value = row.cells[1]
         p_value = cell_value.paragraphs[0]
         p_value.paragraph_format.space_after = Pt(6)
@@ -302,7 +267,7 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
         run_v.font.name = 'Times New Roman'
         run_v.font.size = Pt(12)
 
-    # Remove table borders
+    # Remove all borders
     tblPr = table._tbl.tblPr
     borders = parse_xml(f'<w:tblBorders {nsdecls("w")}>'
                         f'<w:top w:val="none"/>'
@@ -314,7 +279,6 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
                         f'</w:tblBorders>')
     tblPr.append(borders)
 
-    # Group Assignment student table (visible)
     if assignment_type == "Group Assignment" and students:
         doc.add_paragraph()
         student_table = doc.add_table(rows=1, cols=3)
@@ -339,68 +303,117 @@ def create_cover_page(doc, assignment_type, metadata, students=None, uploaded_lo
                         run.font.name = 'Times New Roman'
                         run.font.size = Pt(12)
 
-    # Fill remaining space
     for _ in range(3):
         doc.add_paragraph()
 
-# -------------------- Core Processing --------------------
+# -------------------- Core Processing (with images) --------------------
 def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_type, students, uploaded_logo):
-    """Build the final document."""
     new_doc = Document()
 
-    # 1. Cover page (section 0)
+    # Cover page
     create_cover_page(new_doc, assignment_type, metadata, students, uploaded_logo)
-
-    # 2. Add double border to first section (cover page only)
     add_mzumbe_double_border_to_first_section(new_doc)
-
-    # 3. Add a new section (this starts on a new page)
     new_doc.add_section()
-
-    # 4. Remove any borders from other sections
     remove_borders_from_other_sections(new_doc)
 
-    # 5. Extract paragraphs from source
-    paragraphs_text = []
-    if input_mode == "Pakia Faili la DOCX" and uploaded_file is not None:
-        original = Document(uploaded_file)
-        paragraphs_text = [p.text for p in original.paragraphs if p.text.strip() != ""]
-    elif input_mode == "Bandika Maandishi" and raw_text:
-        paragraphs_text = [line.strip() for line in raw_text.splitlines() if line.strip() != ""]
-    else:
-        raise ValueError("Hakuna maandishi yaliyopatikana. Tafadhali hakikisha umepakia faili au umeandika maandishi.")
-
-    if not paragraphs_text:
-        raise ValueError("Maandishi uliyoingiza hayana maneno. Tafadhali angalia tena.")
-
-    # 6. Process paragraphs
-    in_reference = False
-    for text in paragraphs_text:
-        stripped = text.strip().upper()
-        if stripped in ["REFERENCES", "BIBLIOGRAPHY"]:
-            new_doc.add_page_break()
-            in_reference = True
-            p = new_doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # Helper to add content paragraph with formatting
+    def add_content_paragraph(doc, text, is_reference=False, image_blob=None):
+        p = doc.add_paragraph()
+        if image_blob:
+            run = p.add_run()
+            run.add_picture(io.BytesIO(image_blob), width=Inches(5.0))
+        else:
             run = p.add_run(text)
-            run.bold = True
-            run.font.name = 'Times New Roman'
-            run.font.size = Pt(12)
-            continue
-
-        new_para = new_doc.add_paragraph()
-        run = new_para.add_run(text)
         run.font.name = 'Times New Roman'
         run.font.size = Pt(12)
-        new_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        new_para.paragraph_format.line_spacing = 1.5
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p.paragraph_format.line_spacing = 1.5
+        if is_reference:
+            p.paragraph_format.first_line_indent = Inches(-0.5)
+            p.paragraph_format.left_indent = Inches(0.5)
+        return p
 
-        if in_reference:
-            new_para.paragraph_format.first_line_indent = Inches(-0.5)
-            new_para.paragraph_format.left_indent = Inches(0.5)
-            format_reference_paragraph(new_para)
+    in_reference = False
+    paragraphs_text = []
 
-    # 7. Add page numbers
+    if input_mode == "Pakia Faili la DOCX" and uploaded_file is not None:
+        original = Document(uploaded_file)
+        # Iterate over body elements to preserve order
+        from docx.oxml.text.paragraph import CT_P
+        from docx.oxml.table import CT_Tbl
+        body = original._element.body
+        for child in body.iterchildren():
+            if child.tag == qn('w:p'):
+                p = Document._element_to_paragraph(child)
+                text = p.text.strip()
+                # Check for images in runs
+                image_blob = None
+                for run in p.runs:
+                    drawing = run._element.find('.//' + qn('w:drawing'))
+                    if drawing is not None:
+                        blip = drawing.find('.//' + qn('a:blip'))
+                        if blip is not None:
+                            rId = blip.get(qn('r:embed'))
+                            if rId:
+                                image_part = original.part.related_parts[rId]
+                                image_blob = image_part.blob
+                                break
+                # Detect reference heading
+                if text.upper() in ["REFERENCES", "BIBLIOGRAPHY"]:
+                    # Add page break and center the heading
+                    new_doc.add_page_break()
+                    in_reference = True
+                    p_heading = new_doc.add_paragraph()
+                    p_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p_heading.add_run(text)
+                    run.bold = True
+                    run.font.name = 'Times New Roman'
+                    run.font.size = Pt(12)
+                    continue
+                # Add paragraph with formatting
+                is_ref = in_reference and text.upper() not in ["REFERENCES", "BIBLIOGRAPHY"]
+                new_p = add_content_paragraph(new_doc, text, is_ref, image_blob)
+                if is_ref:
+                    # Format reference (italicize book titles)
+                    format_reference_paragraph(new_p)
+                if text:
+                    paragraphs_text.append(text)
+            elif child.tag == qn('w:tbl'):
+                # Copy table (simplified)
+                try:
+                    table = Document._element_to_table(child)
+                    if table.rows:
+                        new_table = new_doc.add_table(rows=len(table.rows), cols=len(table.rows[0].cells))
+                        new_table.style = 'Table Grid'
+                        for i, row in enumerate(table.rows):
+                            for j, cell in enumerate(row.cells):
+                                new_table.cell(i, j).text = cell.text
+                except:
+                    pass
+    elif input_mode == "Bandika Maandishi" and raw_text:
+        lines = [line.strip() for line in raw_text.splitlines() if line.strip() != ""]
+        for text in lines:
+            if text.upper() in ["REFERENCES", "BIBLIOGRAPHY"]:
+                new_doc.add_page_break()
+                in_reference = True
+                p_heading = new_doc.add_paragraph()
+                p_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p_heading.add_run(text)
+                run.bold = True
+                run.font.name = 'Times New Roman'
+                run.font.size = Pt(12)
+                continue
+            is_ref = in_reference and text.upper() not in ["REFERENCES", "BIBLIOGRAPHY"]
+            new_p = add_content_paragraph(new_doc, text, is_ref)
+            if is_ref:
+                format_reference_paragraph(new_p)
+            paragraphs_text.append(text)
+    else:
+        raise ValueError("Hakuna maandishi yaliyopatikana.")
+
+    if not paragraphs_text and input_mode != "Pakia Faili la DOCX":
+        raise ValueError("Maandishi uliyoingiza hayana maneno. Tafadhali angalia tena.")
+
     add_page_numbers(new_doc)
 
     buffer = io.BytesIO()
@@ -410,7 +423,6 @@ def process_document(input_mode, uploaded_file, raw_text, metadata, assignment_t
 
 # -------------------- PDF Preview (optional) --------------------
 def convert_docx_to_pdf(docx_buffer):
-    """Convert docx to PDF using docx2pdf (Windows only, requires Word installed)."""
     try:
         from docx2pdf import convert
         import tempfile
@@ -426,9 +438,9 @@ def convert_docx_to_pdf(docx_buffer):
         pdf_buffer.seek(0)
         return pdf_buffer
     except ImportError:
-        raise ImportError("Moduli ya docx2pdf haijasakinishwa. Tafadhali endesha: pip install docx2pdf")
+        raise ImportError("Moduli ya docx2pdf haijasakinishwa. Endesha: pip install docx2pdf")
     except Exception as e:
-        raise Exception(f"Hitilafu wakati wa kubadilisha kuwa PDF: {e}")
+        raise Exception(f"Hitilafu: {e}")
 
 # -------------------- Streamlit UI --------------------
 st.markdown(
@@ -440,7 +452,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ---- Logo Uploader (Optional) ----
+# Logo uploader (optional) in sidebar
 st.sidebar.header("⚙️ Mipangilio")
 uploaded_logo = st.sidebar.file_uploader(
     "Pakia Nembo Mwenyewe (hiari)",
@@ -448,7 +460,6 @@ uploaded_logo = st.sidebar.file_uploader(
     help="Ikiwa nembo ya mtandao haipatikani, pakia picha yako."
 )
 
-# ---- Input Mode Selection ----
 input_mode = st.radio(
     "Chagua njia ya kuingiza maandishi",
     ["Pakia Faili la DOCX", "Bandika Maandishi"],
@@ -456,7 +467,6 @@ input_mode = st.radio(
     horizontal=True
 )
 
-# ---- Content Input ----
 uploaded_file = None
 raw_text = ""
 if input_mode == "Pakia Faili la DOCX":
@@ -472,7 +482,6 @@ else:
         placeholder="Weka kila aya kwenye mstari mpya."
     )
 
-# ---- Assignment Type ----
 assignment_type = st.radio(
     "Aina ya Kazi",
     ["Individual Assignment", "Group Assignment"],
@@ -480,15 +489,12 @@ assignment_type = st.radio(
     horizontal=True
 )
 
-# ---- Metadata Inputs ----
 col1, col2 = st.columns(2)
-
 with col1:
     programme = st.text_input("Programme", placeholder="mfano: BBA-EIM 1A")
     subject_name = st.text_input("Jina la Somo", placeholder="mfano: PRINCIPLES OF MANAGEMENT")
     subject_code = st.text_input("Msimbo wa Somo", placeholder="mfano: PUB 111")
     lecturer = st.text_input("Jina la Mhadhiri", placeholder="PAULO MARO")
-
 with col2:
     if assignment_type == "Individual Assignment":
         student_name = st.text_input("Jina la Mwanafunzi", placeholder="Jina kamili")
@@ -498,10 +504,8 @@ with col2:
         group_number = st.text_input("Namba ya Kikundi", placeholder="mfano: Group 5")
         student_name = ""
         reg_number = ""
-
     date_submission = st.text_input("Tarehe ya Uwasilishaji", placeholder="mfano: 15 JUNE 2026")
 
-# ---- Students List (Group only) ----
 students = []
 if assignment_type == "Group Assignment":
     st.subheader("Taarifa za Wanafunzi")
@@ -522,12 +526,10 @@ if assignment_type == "Group Assignment":
             else:
                 st.warning(f"Imepitishwa mstari (inatarajiwa 'Jina, RegNo'): {line}")
 
-# ---- Buttons ----
 col_btn1, col_btn2 = st.columns(2)
 process_btn = col_btn1.button("🚀 Pangwa Katika Sekunde", use_container_width=True)
 preview_btn = col_btn2.button("👁️ Onyesha Hati (Preview)", use_container_width=True, disabled=not st.session_state.get('processed', False))
 
-# State
 if 'doc_buffer' not in st.session_state:
     st.session_state.doc_buffer = None
 if 'processed' not in st.session_state:
@@ -535,14 +537,12 @@ if 'processed' not in st.session_state:
 if 'pdf_buffer' not in st.session_state:
     st.session_state.pdf_buffer = None
 
-# ---- Process ----
 if process_btn:
     errors = []
     if input_mode == "Pakia Faili la DOCX" and uploaded_file is None:
         errors.append("Tafadhali pakua faili la DOCX.")
     elif input_mode == "Bandika Maandishi" and not raw_text.strip():
         errors.append("Tafadhali bandika maandishi.")
-
     if not programme:
         errors.append("Programme inahitajika.")
     if not subject_name:
@@ -562,7 +562,7 @@ if process_btn:
         if not group_number:
             errors.append("Namba ya Kikundi inahitajika.")
         if not students:
-            st.warning("Hakuna data ya wanafunzi iliyotolewa. Jedwali litakuwa tupu.")
+            st.warning("Hakuna data ya wanafunzi. Jedwali litakuwa tupu.")
 
     if errors:
         for err in errors:
@@ -587,7 +587,7 @@ if process_btn:
                     metadata,
                     assignment_type,
                     students,
-                    uploaded_logo  # pass the uploaded logo
+                    uploaded_logo
                 )
                 st.session_state.doc_buffer = buffer
                 st.session_state.processed = True
@@ -602,7 +602,6 @@ if process_btn:
                     use_container_width=True
                 )
 
-                # Try to show preview automatically
                 try:
                     with st.spinner("Inaandaa onyesho la PDF..."):
                         pdf_buffer = convert_docx_to_pdf(buffer)
@@ -619,7 +618,6 @@ if process_btn:
             st.error(f"Hitilafu ilitokea: {e}")
             st.exception(e)
 
-# ---- Manual Preview ----
 if preview_btn and st.session_state.processed and st.session_state.doc_buffer is not None:
     try:
         with st.spinner("Inaandaa onyesho la PDF..."):
@@ -629,15 +627,14 @@ if preview_btn and st.session_state.processed and st.session_state.doc_buffer is
             pdf_display = f'<iframe class="preview-frame" src="data:application/pdf;base64,{base64_pdf}" type="application/pdf"></iframe>'
             st.markdown(pdf_display, unsafe_allow_html=True)
     except ImportError:
-        st.error("Moduli ya docx2pdf haijasakinishwa. Tafadhali endesha: pip install docx2pdf")
+        st.error("Moduli ya docx2pdf haijasakinishwa. Endesha: pip install docx2pdf")
     except Exception as e:
         st.error(f"Haikuweza kuonyesha preview: {e}")
 
-# ---- Footer ----
 st.markdown(
     """
     <hr>
-    <p class="footer">Imetengenezwa kwa ❤️ na Musa Lucas Masasi · Chuo Kikuu cha Mzumbe</p>
+    <p class="footer">Imetengenezwa kwa  na Musa Lucas Masasi · Chuo Kikuu cha Mzumbe</p>
     """,
     unsafe_allow_html=True
 )
