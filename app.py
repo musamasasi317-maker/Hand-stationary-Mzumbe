@@ -1,4 +1,17 @@
 import streamlit as st
+import streamlit as st
+
+# Kodi ya kuficha alama za Streamlit na GitHub ili app iwe pure
+hide_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stAppDeployDropdown {display: none !important;}
+    viewerBadge_link__e3241 {display: none !important;}
+    </style>
+"""
+st.markdown(hide_style, unsafe_allow_html=True)
 import requests
 import io
 import re
